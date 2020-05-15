@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+  .land {
+    fill: #e5e5e5;
+  }
+
+  .border {
+    fill: #e5e5e5;
+    stroke: #fff;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+body {
+  background-color: #181818;
+}
+
+.DT.label {
+  font: 400 80px"Helvetica Neue";
+  color: #fff;
+}
+
+
+
+</style>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/queue.v1.min.js"></script>
+<script src="https://d3js.org/topojson.v1.min.js"></script>
+<script src="../colorbrewer.js"></script>
+<div id="Box" >
+ Date :
+</div>
+ <div id="chart"></div>
+<script>
+
+
+
+var format = d3.format(",");
+var parseTime = d3.timeParse("%d/%m/%Y");
+var FormatDt = d3.timeFormat("%Y%m%d");
+var formatNum = d3.format(",.0r");
+
+
+function key(d) {
+  return d.id;
+}
+
+
+
+var margin = {top: 0, right: 0, bottom: 0, left: 0},
+            width = 960 - margin.left - margin.right,
+            height = 500 - margin.top - margin.bottom;
+
+//define color pallette using colorbrewer
+var color = d3.scaleThreshold()
+     .domain([0,10,50,100,500,1000,5000,10000,50000,150000])
+     .range(colorbrewer.Deep[10]);
+var path = d3.geoPath();
+
+var svg =  d3.select("#chart")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .append('g')
+            .attr('class', 'map');
+
+var projection = d3.geoMercator()
+                   .scale(130)
+                  .translate( [width / 2, height / 1.5]);
+
+var path = d3.geoPath().projection(projection);
+
+// Add the Date label; the value is set on transition.
+var label = d3.select("#Box")
+  .attr("class", "DT label")
+  .attr("text-anchor", "end")
+  .attr("y", height - 24)
+  .attr("x", width)
+  .text("COVID19");
+
+function buildChart(data,covid,Dates) {
+  //data.features.forEach(function(d) { d.deaths = casesById[d.id]===undefined ? 0:  casesById[d.id][1] });
+   var countries=svg.append("g")
+      .attr("class", "countries") ;
+
+           //var tmp=interpolateData(Dates[0]);
+        // console.log(tmp);
+    var country= countries.selectAll(".path")
+      //.data(data.features)
+       .data(interpolateData(Dates[Dates.length-1]))
+      .enter().append("path")
+        .attr("class","path")
+      .attr("d", path)
+      .style("fill", function(d) { return color(d.cases); })
+      .style('stroke', 'white')
+      .style("opacity",0.8)
+      .style('stroke-width', 0.3)
+       .on('mouseover',function(d){
+          d3.select(this)
+            .style("opacity", 1)
+            .style("stroke","white")
+            .style("stroke-width",3);
+        })
+        .on('mouseout', function(d){
+          d3.select(this)
+            .style("opacity", 0.8)
+            .style("stroke","white")
+            .style("stroke-width",0.3);
+        })
+    .call(play);
+
+
+  svg.append("path")
+      .datum(topojson.mesh(data.features, function(a, b) { return a.id !== b.id; }))
+       // .datum(topojson.mesh(data.features, function(a, b) { return a !== b; }))
+      .attr("class", "border")
+      .attr("d", path);
+
+          // Start a transition that interpolates the data based on Date.
+  svg.transition()
+    .duration(100000)
+    //.ease("linear")
+    .tween("Date", tweenDt)
+    .each("end", Stop);
+
+      // Play visulaization
+  function play(country) {
+      country.style("fill", function(d) { return color(d.cases); });
+  }
+
+              // Stop it
+  function Stop() {
+      // Cancel the current transition, if any.
+    svg.transition().duration(0);
+                  // console.log(tmp);
+  }
+
+
+
+  // For the interpolated data, the dots and label are redrawn.
+  function tweenDt() {
+    var Dt = d3.interpolateRound(0, Dates.length-1);
+    return function(t) {
+      displayDt(Dt(t));
+    };
+  }
+
+  // Updates the display to show the specified Date.
+  function displayDt(Seq) {
+        //  console.log('into Display'+Seq);
+    var BusDate=Dates[Seq];
+    country.data(interpolateData(BusDate)).call(play);
+    label.text(BusDate);
+  }
+
+
+  // Interpolates the dataset for the given (fractional) Date.
+  function interpolateData(BusDate) {
+        //  console.log('into interpolateData'+BusDate);
+      SubData=covid.records.filter(function(d) {  return d.BusDate==BusDate}) ;
+      //console.log(SubData);
+        var casesById = {};
+        SubData.forEach(function(d) { casesById[d.countryterritoryCode] = [d.cases,d.deaths]; });
+       var ndata=data;
+       ndata.features.forEach(function(d) { d.cases = casesById[d.id]===undefined ? 0:  casesById[d.id][0];
+                                         d.deaths = casesById[d.id]===undefined ? 0:  casesById[d.id][1];
+                                       d.BusDate =  BusDate; });
+        return ndata.features;
+  }
+
+
+}
+
+// process data and topojson
+
+queue()
+    .defer(d3.json, "../world.json")
+    .defer(d3.json, "covid19.json")
+    .await(ready);
+
+function ready(error, data, covid) {
+  covid.records.forEach(function(d) {
+    d.BusDate =  FormatDt(parseTime(d.dateRep));
+    d.cases = +d.cases;
+    d.deaths = +d.deaths;
+  });
+  console.log(covid);
+
+// set combo box
+
+  var  Dates=  [];
+  covid.records.forEach(function(d) {
+  if (Dates.indexOf(d.BusDate) === -1) {
+  Dates.push(d.BusDate);
+  }
+  });
+
+
+  Dates.sort();
+
+  console.log(Dates);
+
+  console.log(covid);
+  console.log(data);
+
+
+
+        //set world map
+buildChart(data,covid,Dates);
+}
+
+</script>
+</body>
+</html>
